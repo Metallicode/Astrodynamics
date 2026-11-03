@@ -145,6 +145,14 @@
         .seg-sm .seg-btn { padding: 3px 10px; font-size: 0.75rem; flex: none; }
         body.atlas-open main { padding: 0.75rem; }
         body.atlas-open #view-switch { top: 0.75rem; left: 0.75rem; }
+        body.moon-open main { justify-content: flex-start; align-items: stretch; overflow-y: auto; }
+        @media (min-width: 1280px) { body.moon-open main { height: 100vh; } }
+        .moon-card { background: rgba(15, 23, 42, 0.65); border: 1px solid #1e293b; border-radius: 1rem; padding: 1rem; }
+        .moon-h { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+        #moon-orbit { touch-action: none; cursor: grab; user-select: none; }
+        #moon-strip-box { touch-action: pan-y; cursor: grab; user-select: none; }
+        #moon-strip text, #moon-orbit text { user-select: none; }
+        #moon-view svg text { font-family: inherit; }
 
         .link-btn { color: inherit; text-align: left; }
         .link-btn:hover { color: #93c5fd; }
@@ -311,6 +319,7 @@
         <div class="absolute top-4 left-4 z-30 flex gap-1 bg-slate-800/90 p-1 rounded-lg seg-sm" id="view-switch">
             <button class="seg-btn" data-view="wheel">☸ Wheel</button>
             <button class="seg-btn" data-view="atlas">🔭 Sky Atlas</button>
+            <button class="seg-btn" data-view="moon">🌙 Moon</button>
         </div>
         <div id="wheel-view" class="w-full flex flex-col items-center">
         <div class="absolute top-4 right-4 z-30 flex flex-col items-center gap-1" id="zoom-controls">
@@ -384,6 +393,80 @@
             <div id="atlas-status" class="text-xs text-slate-400"></div>
             <div class="text-[10px] text-slate-600">Stars: Hipparcos/Yale BSC via d3-celestial (BSD). Figures: Stellarium sky cultures (CC BY-SA). H.A. Rey figures by M. Richards &amp; G. Zotti after Rey's <i>The Stars: A New Way to See Them</i>.</div>
         </div>
+
+        <!-- Chandra: the Moon view -->
+        <div id="moon-view" class="hidden w-full flex flex-col gap-3 pt-10">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-lg seg-sm max-w-full overflow-x-auto" title="Date and time">
+                    <button class="seg-btn" data-moon-time="-1d" title="1 day back">−1d</button>
+                    <button class="seg-btn" data-moon-time="-1h" title="1 hour back">−1h</button>
+                    <span id="moon-clock" class="font-mono text-xs text-slate-200 px-2 whitespace-nowrap"></span>
+                    <button class="seg-btn" data-moon-time="1h" title="1 hour forward">+1h</button>
+                    <button class="seg-btn" data-moon-time="1d" title="1 day forward">+1d</button>
+                    <button class="seg-btn" data-moon-time="1M" title="1 month forward">+1M</button>
+                    <button class="seg-btn text-sky-300" data-moon-time="now">Now</button>
+                </div>
+                <div class="flex gap-1 bg-slate-800 p-1 rounded-lg seg-sm" title="Animate">
+                    <button class="seg-btn" data-moon-anim="month" data-label="A month" title="Run the clock 3 hours per frame: watch a whole lunation">▶ A month</button>
+                    <button class="seg-btn" data-moon-anim="nodes" data-label="The node cycle" title="Run the clock 8 days per frame: watch the nodes slide backwards and the eclipse seasons drift">▶ The node cycle</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+                <section class="moon-card" id="moon-phase"></section>
+                <section class="moon-card">
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <h3 class="moon-h text-lime-300">☊ Rahu &amp; ☋ Ketu: where the orbits cross</h3>
+                        <label class="atlas-toggle"><input type="checkbox" id="moon-exaggerate">Exaggerate tilt</label>
+                    </div>
+                    <div id="moon-orbit" class="max-w-[560px] mx-auto w-full"></div>
+                    <div id="moon-orbit-text"></div>
+                </section>
+            </div>
+
+            <section class="moon-card" id="moon-lunation"></section>
+
+            <div class="grid grid-cols-1 xl:grid-cols-[2fr,1fr] gap-3">
+                <section class="moon-card" id="moon-wave"></section>
+                <section class="moon-card" id="moon-season"></section>
+            </div>
+
+            <section class="moon-card">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <h3 class="moon-h text-sky-300">The Moon's road through the stars</h3>
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <label class="atlas-toggle"><input type="checkbox" data-moon-layer="nakshatras">Nakshatras</label>
+                        <label class="atlas-toggle"><input type="checkbox" data-moon-layer="signs">Sidereal signs</label>
+                        <label class="atlas-toggle"><input type="checkbox" data-moon-layer="bounds">IAU borders</label>
+                        <label class="atlas-toggle"><input type="checkbox" data-moon-layer="figures">Figures</label>
+                        <label class="atlas-toggle"><input type="checkbox" data-moon-layer="planets">Planets</label>
+                        <div class="flex gap-1 bg-slate-800 p-1 rounded-lg seg-sm" title="How much of the zodiac to show">
+                            <button class="seg-btn" data-moon-span="45">45°</button>
+                            <button class="seg-btn" data-moon-span="90">90°</button>
+                            <button class="seg-btn" data-moon-span="180">180°</button>
+                            <button class="seg-btn" data-moon-span="360">360°</button>
+                        </div>
+                        <button id="moon-follow" class="hidden text-xs text-amber-300 underline">◎ back to the Moon</button>
+                    </div>
+                </div>
+                <div id="moon-strip-box" class="w-full overflow-hidden rounded-lg bg-[#060a14] border border-slate-800">
+                    <svg id="moon-strip" width="100%" style="display:block"></svg>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">Sidereal ecliptic, ±15° of latitude, east on the left as in the sky. The white line is the Moon's path over one circuit of the sky: dashed where it has been, solid where it is going, with a dot at each midnight. Orange rings mark each nakshatra's junction star (yogatara). Drag sideways to travel, and click names, stars or planets for details.</p>
+                <div id="moon-strip-info" class="mt-2"></div>
+            </section>
+
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                <section class="moon-card" id="moon-panchanga"></section>
+                <section class="moon-card" id="moon-condition"></section>
+                <section class="moon-card" id="moon-passes"></section>
+            </div>
+
+            <section class="moon-card" id="moon-cycle"></section>
+            <div id="moon-learn-nodes" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+            <div id="moon-learn-myth" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+            <div class="text-[10px] text-slate-600 pb-4">Ephemeris: astronomy-engine. Nakshatras: 27 equal 13°20′ divisions of the Lahiri sidereal zodiac. Yogataras after the Surya Siddhanta as commonly identified; some identifications are disputed.</div>
+        </div>
     </main>
 
     <!-- Info Sidebar (Right) -->
@@ -402,7 +485,9 @@
     <script src="lore.js"></script>
     <script src="sky-data.js"></script>
     <script src="sky-lore.js"></script>
+    <script src="moon-lore.js"></script>
     <script src="app.js"></script>
     <script src="atlas.js"></script>
+    <script src="moon.js"></script>
 </body>
 </html>

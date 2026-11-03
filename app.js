@@ -54,7 +54,7 @@ const STORAGE_KEY = 'astrodynamics.settings.v2';
 const state = {
     date: new Date(),
     mode: 'tropical',            // 'tropical' | 'sidereal' | 'astronomical'
-    view: 'wheel',               // 'wheel' | 'atlas' (the Sky Atlas, atlas.js)
+    view: 'wheel',               // 'wheel' | 'atlas' (the Sky Atlas, atlas.js) | 'moon' (moon.js)
     nodeType: 'mean',            // 'mean' | 'true'
     location: null,              // { lat, lon }
     layers: {
@@ -1177,7 +1177,8 @@ function renderPanel() {
 let panelTimer = null;
 function schedulePanelRender() {
     clearTimeout(panelTimer);
-    panelTimer = setTimeout(renderPanel, state.playTimer ? 0 : 30);
+    // While the Moon view animates, the panel waits until the clock stops.
+    panelTimer = setTimeout(renderPanel, state.playTimer ? 0 : moon.anim ? 400 : 30);
 }
 
 function renderSky() {
@@ -1259,6 +1260,7 @@ function renderSky() {
         </div>
         <div class="text-xs text-slate-400 mt-3">Sidereal Moon: ${fmtSign(pos.Moon.sid)} · Sun: ${fmtSign(pos.Sun.sid)}</div>
         ${tithi.note ? `<p class="text-xs text-slate-400 mt-2 italic">${tithi.note}</p>` : ''}
+        ${state.view !== 'moon' ? '<button class="mt-3 text-xs text-sky-300 hover:text-white" data-view-open="moon">🌙 Full panchanga, Rahu &amp; Ketu and the Moon\'s path in the Moon view →</button>' : ''}
     `, 'text-orange-400'));
 
     // Angles
@@ -1685,6 +1687,7 @@ function renderDetail(type, key) {
             card('Currently here', here.length
                 ? `<ul class="flex flex-col gap-1 text-sm">${here.map(b => `<li>${planetLink(b.id)} <span class="text-slate-500">pada ${nakshatraOf(pos[b.id].sid).pada}</span></li>`).join('')}</ul>`
                 : '<p class="text-sm text-slate-500">No planets in this nakshatra right now.</p>', 'text-emerald-400'),
+            nakshatraLoreCards(i),
             card('', `<p class="text-xs text-slate-500">${LORE.glossary['Nakshatra']} The ruling planets cycle Ketu → Venus → Sun → Moon → Mars → Rahu → Jupiter → Saturn → Mercury three times, which is the order of the Vimshottari dasha.</p>`)
         ].join('');
     }
@@ -1801,6 +1804,7 @@ function updateApp() {
     if (view.follow) followView();
     else scaleSvgDetail();
     renderAtlas();
+    renderMoon();
 
     document.getElementById('ayanamsa-display').innerText = isAstro()
         ? `Real IAU constellation borders (unequal sizes, incl. Ophiuchus) · ayanamsa ${fmtOrb(ayanamsa(date))}`
@@ -2005,6 +2009,7 @@ function init() {
     createPlanetElements();
     bindEvents();
     bindZoom();
+    bindMoon();
     bindAtlas();
     syncLocationInputs();
     updateApp();
