@@ -56,6 +56,7 @@ const state = {
     mode: 'tropical',            // 'tropical' | 'sidereal' | 'astronomical'
     view: 'wheel',               // 'wheel' | 'atlas' (the Sky Atlas, atlas.js) | 'moon' (moon.js)
     nodeType: 'mean',            // 'mean' | 'true'
+    houseSystem: 'whole',        // a key of HOUSE_SYSTEMS
     location: null,              // { lat, lon }
     layers: {
         zodiac: true, 'zodiac-names': true, houses: true, ticks: true,
@@ -75,6 +76,7 @@ function loadSettings() {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
         if (saved.mode) state.mode = saved.mode;
         if (saved.nodeType) state.nodeType = saved.nodeType;
+        if (saved.houseSystem in HOUSE_SYSTEMS) state.houseSystem = saved.houseSystem;
         if (saved.location) state.location = saved.location;
         if (saved.layers) Object.assign(state.layers, saved.layers);
         if (saved.eventDays) state.eventDays = saved.eventDays;
@@ -87,8 +89,8 @@ function loadSettings() {
 }
 
 function saveSettings() {
-    const { mode, nodeType, location, layers, eventDays, eventMoon, playStep, view } = state;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, nodeType, location, layers, eventDays, eventMoon, playStep, view }));
+    const { mode, nodeType, houseSystem, location, layers, eventDays, eventMoon, playStep, view } = state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, nodeType, houseSystem, location, layers, eventDays, eventMoon, playStep, view }));
 }
 
 // ---------------------------------------------------------------------------
@@ -289,20 +291,101 @@ function computePositions(date) {
     return pos;
 }
 
-function computeAngles(date, loc) {
-    if (!loc) return null;
+// Tropical ASC/MC plus the sky frame (radians) they come from.
+function localFrame(date, loc) {
     const ramc = norm360(Astronomy.SiderealTime(date) * 15 + loc.lon) * DEG;
     const eps = meanObliquity(date) * DEG;
     const lat = loc.lat * DEG;
     const asc = norm360(Math.atan2(Math.cos(ramc), -(Math.sin(ramc) * Math.cos(eps) + Math.tan(lat) * Math.sin(eps))) / DEG);
     const mc = norm360(Math.atan2(Math.sin(ramc), Math.cos(ramc) * Math.cos(eps)) / DEG);
+    return { ramc, eps, lat, asc, mc };
+}
+
+function computeAngles(date, loc) {
+    if (!loc) return null;
+    const { asc, mc } = localFrame(date, loc);
     return { asc: toMode(asc, date), mc: toMode(mc, date) };
 }
 
-function houseOf(lon, angles) {
-    if (!angles) return null;
-    return ((signIndex(lon) - signIndex(angles.asc) + 12) % 12) + 1;
+// House systems. Sign-based ones (whole sign, Chandra/Surya lagna) give each sign to one house;
+// Equal and Placidus divide the ecliptic from the exact Ascendant degree.
+const HOUSE_SYSTEMS = {
+    whole:    { name: 'Whole Sign', short: 'whole sign', signBased: true, needsLocation: true,
+                note: 'The whole rising sign is the 1st house, the next sign the 2nd, and so on. The oldest system, used in Hellenistic and Vedic astrology.' },
+    equal:    { name: 'Equal', short: 'Equal', signBased: false, needsLocation: true,
+                note: 'Twelve 30° houses starting at the exact Ascendant degree, so a house usually straddles two signs. The MC floats free of the 10th cusp.' },
+    placidus: { name: 'Placidus', short: 'Placidus', signBased: false, needsLocation: true,
+                note: 'Divides time rather than space: the 12th cusp is the degree one third of the way, in time, from rising to culminating, the 11th two thirds; the houses below the horizon are split the same way. Cusps 1, 4, 7 and 10 are the ASC, IC, DSC and MC, and house sizes are unequal. The most used system in modern Western astrology. It breaks down beyond the polar circles, where some degrees never rise.' },
+    moon:     { name: 'Moon sign (Chandra Lagna)', short: 'Chandra Lagna', signBased: true, needsLocation: false, ref: 'Moon',
+                note: 'The Moon\'s sign is the 1st house. In Jyotish it is read alongside the birth chart and is the usual frame for transits (gochara). No birth time or place is needed.' },
+    sun:      { name: 'Sun sign (Surya Lagna)', short: 'Surya Lagna', signBased: true, needsLocation: false, ref: 'Sun',
+                note: 'The Sun\'s sign is the 1st house. A secondary Vedic chart, and the Western "solar chart" used when the birth time is unknown. Sun-sign horoscopes are read this way.' }
+};
+
+// Placidus cusp for hour-angle fraction f of the semi-arc: the ecliptic degree whose hour angle equals the fraction.
+// Above the horizon (cusps 11, 12): H = −f·DSA. Below (cusps 2, 3): H = −180° + f·NSA. Returns null if the degree never rises or sets.
+function placidusCusp(ramc, eps, lat, f, below) {
+    let ra = ramc + (below ? 180 - f * 90 : f * 90) * DEG;
+    for (let i = 0; i < 30; i++) {
+        const lon = Math.atan2(Math.sin(ra), Math.cos(ra) * Math.cos(eps));
+        const dec = Math.asin(Math.sin(eps) * Math.sin(lon));
+        const x = -Math.tan(lat) * Math.tan(dec);
+        if (Math.abs(x) > 1) return null;
+        const dsa = Math.acos(x);
+        const next = below ? ramc + Math.PI - f * (Math.PI - dsa) : ramc + f * dsa;
+        if (Math.abs(wrap180((next - ra) / DEG)) < 1e-7) { ra = next; break; }
+        ra = next;
+    }
+    return norm360(Math.atan2(Math.sin(ra), Math.cos(ra) * Math.cos(eps)) / DEG);
 }
+
+// Porphyry: trisect each quadrant between the angles. The usual fallback where Placidus fails.
+function porphyryCusps(asc, mc) {
+    const ic = norm360(mc + 180), dsc = norm360(asc + 180);
+    const q1 = norm360(ic - asc), q2 = norm360(dsc - ic);
+    return [asc, asc + q1 / 3, asc + 2 * q1 / 3, ic, ic + q2 / 3, ic + 2 * q2 / 3,
+            dsc, dsc + q1 / 3, dsc + 2 * q1 / 3, mc, mc + q2 / 3, mc + 2 * q2 / 3].map(norm360);
+}
+
+// Returns { system, cusps[12] in display longitude, signBased, fallback } or null when the system needs a location we lack.
+function computeHouses(date, loc, pos) {
+    const id = state.houseSystem, sys = HOUSE_SYSTEMS[id];
+    if (sys.ref) {
+        const first = signIndex(pos[sys.ref].lon);
+        return { system: id, signBased: true, cusps: Array.from({ length: 12 }, (_, i) => ((first + i) % 12) * 30) };
+    }
+    if (!loc) return null;
+    const { ramc, eps, lat, asc, mc } = localFrame(date, loc);
+    let cusps, fallback = null;
+    if (id === 'whole') {
+        const first = signIndex(toMode(asc, date));
+        return { system: id, signBased: true, cusps: Array.from({ length: 12 }, (_, i) => ((first + i) % 12) * 30) };
+    }
+    if (id === 'equal') cusps = Array.from({ length: 12 }, (_, i) => norm360(asc + 30 * i));
+    else {
+        const c11 = placidusCusp(ramc, eps, lat, 1 / 3, false), c12 = placidusCusp(ramc, eps, lat, 2 / 3, false);
+        const c2 = placidusCusp(ramc, eps, lat, 2 / 3, true), c3 = placidusCusp(ramc, eps, lat, 1 / 3, true);
+        if ([c11, c12, c2, c3].includes(null)) {
+            cusps = porphyryCusps(asc, mc);
+            fallback = 'Porphyry';
+        } else {
+            cusps = [asc, c2, c3, mc + 180, c11 + 180, c12 + 180, asc + 180, c2 + 180, c3 + 180, mc, c11, c12].map(norm360);
+        }
+    }
+    return { system: id, signBased: false, fallback, cusps: cusps.map(c => toMode(c, date)) };
+}
+
+function houseOf(lon, houses) {
+    if (!houses) return null;
+    if (houses.signBased) return ((signIndex(lon) - signIndex(houses.cusps[0]) + 12) % 12) + 1;
+    for (let i = 0; i < 12; i++) {
+        const span = norm360(houses.cusps[(i + 1) % 12] - houses.cusps[i]);
+        if (norm360(lon - houses.cusps[i]) < span) return i + 1;
+    }
+    return 1;
+}
+
+const houseSystemName = () => HOUSE_SYSTEMS[state.houseSystem].short + (current.houses?.fallback ? ` → ${current.houses.fallback}` : '');
 
 function computeAspects(pos) {
     const list = [];
@@ -715,20 +798,30 @@ function drawSignRing(g) {
 
 }
 
-function updateHouses(angles) {
+// Sign-based houses put one numeral per sign. Equal and Placidus draw their own cusp lines across the house ring,
+// so they also show in astronomical mode, where there are no 30° signs to hang whole sign houses on.
+function updateHouses(houses) {
     const g = document.getElementById('houses-group');
     g.innerHTML = '';
-    if (isAstro()) return;
-    for (let i = 0; i < 12; i++) {
-        const house = angles ? ((i - signIndex(angles.asc) + 12) % 12) + 1 : i + 1;
-        const p = polar(R.houseLabel, i * 30 + 15);
+    const label = (house, lon) => {
+        const p = polar(R.houseLabel, lon);
         const t = svgEl('text', {
-            x: p.x, y: p.y, fill: angles ? '#94a3b8' : '#475569', 'font-size': '3.6', 'font-weight': '600',
+            x: p.x, y: p.y, fill: houses ? '#94a3b8' : '#475569', 'font-size': '3.6', 'font-weight': '600',
             'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'house-label'
         }, g);
         t.textContent = ROMAN[house - 1];
         attachHover(t, 'houses', String(house));
+    };
+    if (!houses || houses.signBased) {
+        if (isAstro()) return;
+        for (let i = 0; i < 12; i++) label(houses ? houseOf(i * 30, houses) : i + 1, i * 30 + 15);
+        return;
     }
+    houses.cusps.forEach((c, i) => {
+        const p = polar(R.band, c), q = polar(R.house, c);
+        svgEl('line', { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: '#94a3b8', 'stroke-width': '0.45', 'stroke-opacity': '0.8' }, g);
+        label(i + 1, c + norm360(houses.cusps[(i + 1) % 12] - c) / 2);
+    });
 }
 
 function updateStars(date) {
@@ -1042,7 +1135,7 @@ function tooltipContent(type, key) {
     const pos = current.pos;
     if (type === 'planets') {
         const p = pos[key], b = BODY[key];
-        const house = houseOf(p.lon, current.angles);
+        const house = houseOf(p.lon, current.houses);
         const dig = dignitiesOf(key, p.sign);
         return `<div class="font-semibold" style="color:${b.color}">${b.symbol} ${b.name}${p.retro && !b.node ? ' ℞' : ''}</div>
             <div>${fmtPos(p.lon)}${house ? ` · ${ordinal(house)} house` : ''}</div>
@@ -1067,10 +1160,13 @@ function tooltipContent(type, key) {
     }
     if (type === 'houses') {
         const h = LORE.houses[key];
-        const sign = current.angles ? ZODIAC[(signIndex(current.angles.asc) + Number(key) - 1) % 12] : null;
+        const hs = current.houses, cusp = hs?.cusps[Number(key) - 1];
+        const where = !hs ? 'Natural house (set a location for real houses)'
+            : hs.signBased ? `${signSymbol(signName(cusp))} ${signName(cusp)} (${houseSystemName()})`
+            : `Cusp ${fmtPos(cusp)} (${houseSystemName()})`;
         return `<div class="font-semibold">${ordinal(Number(key))} House: ${h.name}</div>
             <div class="text-xs">${h.keywords.join(' · ')}</div>
-            <div class="text-xs text-slate-400">${sign ? `${signSymbol(sign)} ${sign} (whole sign)` : 'Natural house (set a location for real houses)'}</div>`;
+            <div class="text-xs text-slate-400">${where}</div>`;
     }
     if (type === 'stars') {
         const s = LORE.stars[key];
@@ -1107,7 +1203,7 @@ function hideTooltip() {
 // ---------------------------------------------------------------------------
 // Side panel: tabs & detail views
 
-let current = { pos: null, angles: null, aspects: [] };
+let current = { pos: null, angles: null, houses: null, aspects: [] };
 
 function chip(text, cls = 'bg-slate-700/60 text-slate-300') {
     return `<span class="inline-block px-2 py-0.5 rounded-full text-xs ${cls}">${text}</span>`;
@@ -1182,7 +1278,7 @@ function schedulePanelRender() {
 }
 
 function renderSky() {
-    const { pos, angles, aspects } = current;
+    const { pos, angles, houses, aspects } = current;
     const date = state.date;
     const phase = moonPhaseInfo(date);
     const nak = nakshatraOf(pos.Moon.sid);
@@ -1218,12 +1314,12 @@ function renderSky() {
             <div>
                 <div class="text-sm">${planetLink('Sun')}</div>
                 <div class="font-mono text-amber-200">${posLink(pos.Sun.lon)}</div>
-                ${angles ? `<div class="text-xs text-slate-500">${ordinal(houseOf(pos.Sun.lon, angles))} house</div>` : ''}
+                ${houses ? `<div class="text-xs text-slate-500">${ordinal(houseOf(pos.Sun.lon, houses))} house</div>` : ''}
             </div>
             <div>
                 <div class="text-sm">${planetLink('Moon')}</div>
                 <div class="font-mono text-slate-100">${posLink(pos.Moon.lon)}</div>
-                ${angles ? `<div class="text-xs text-slate-500">${ordinal(houseOf(pos.Moon.lon, angles))} house</div>` : ''}
+                ${houses ? `<div class="text-xs text-slate-500">${ordinal(houseOf(pos.Moon.lon, houses))} house</div>` : ''}
             </div>
         </div>
         <button class="w-full text-left flex items-center gap-3 bg-slate-900/50 rounded-lg p-3 hover:bg-slate-900 transition" data-type="phase" data-key="${phase.index}">
@@ -1265,7 +1361,7 @@ function renderSky() {
 
     // Angles
     if (angles) {
-        parts.push(card('Angles (whole sign houses)', `
+        parts.push(card(`Angles · ${houseSystemName()} houses`, `
             <div class="grid grid-cols-2 gap-3 text-sm">
                 <div><div class="text-xs text-amber-400">Ascendant</div>${posLink(angles.asc)}</div>
                 <div><div class="text-xs text-cyan-400">Midheaven</div>${posLink(angles.mc)}</div>
@@ -1350,12 +1446,12 @@ function eventList(events) {
 }
 
 function renderPositions() {
-    const { pos, angles, aspects } = current;
+    const { pos, angles, houses, aspects } = current;
     const ayan = ayanamsa(state.date);
     const rows = bodies.map(b => {
         const p = pos[b.id];
         const other = state.mode === 'tropical' ? p.sid : state.mode === 'sidereal' ? p.trop : p.sid;
-        const house = houseOf(p.lon, angles);
+        const house = houseOf(p.lon, houses);
         const nak = nakshatraOf(p.sid);
         return `<tr class="border-t border-slate-800 hover:bg-slate-800/60 cursor-pointer" data-type="planets" data-key="${b.id}">
             <td class="py-1.5 pr-2"><span style="color:${b.color}" class="text-lg">${b.symbol}</span></td>
@@ -1393,6 +1489,7 @@ function renderPositions() {
                 <tbody>${rows}</tbody>
             </table>
             ${angles ? `<div class="mt-3 text-xs text-slate-400">ASC ${fmtPos(angles.asc)} · MC ${fmtPos(angles.mc)}</div>` : ''}
+            ${houses ? `<div class="mt-1 text-xs text-slate-500">Houses: ${houseSystemName()}</div>` : ''}
             <div class="mt-2 text-[11px] text-slate-500">Ayanamsa (Lahiri): ${fmtOrb(ayan)}. Nodes are ${state.nodeType} nodes.${isAstro() ? ' Positions are degrees past the constellation\'s western border; signs, houses and element balance use sidereal signs.' : ''}</div>
         `),
         state.mode === 'sidereal' ? drishtiCard(current.drishti) : '',
@@ -1490,12 +1587,12 @@ function factTable(rows) {
 }
 
 function renderDetail(type, key) {
-    const { pos, angles, aspects } = current;
+    const { pos, angles, houses, aspects } = current;
 
     if (type === 'planets') {
         const L = LORE.planets[key], b = BODY[key], p = pos[key];
         const sign = LORE.zodiac[p.sign];
-        const house = houseOf(p.lon, angles);
+        const house = houseOf(p.lon, houses);
         const nak = nakshatraOf(p.sid);
         const dig = dignitiesOf(key, p.sign);
         const ingress = nextIngress(key, state.date, key === 'Moon' ? 4 : ['Sun', 'Mercury', 'Venus', 'Mars'].includes(key) ? 400 : 3 * 365);
@@ -1559,7 +1656,13 @@ function renderDetail(type, key) {
         const z = LORE.zodiac[key];
         const idx = ZODIAC.indexOf(key);
         const here = bodies.filter(b => pos[b.id].sign === key);
-        const houseNum = angles ? ((idx - signIndex(angles.asc) + 12) % 12) + 1 : null;
+        let houseText = `${ordinal(idx + 1)} (natural zodiac)`;
+        if (houses?.signBased) houseText = `${ordinal(houseOf(idx * 30, houses))} house from your ${HOUSE_SYSTEMS[houses.system].ref || 'Ascendant'} (${houseSystemName()})`;
+        else if (houses) {
+            const nums = [...new Set(Array.from({ length: 60 }, (_, d) => houseOf(idx * 30 + d / 2, houses)))];
+            const intercepted = !houses.cusps.some(c => signIndex(c) === idx);
+            houseText = `${nums.map(n => ordinal(n)).join(' & ')} house${nums.length > 1 ? 's' : ''} (${houseSystemName()})${intercepted ? ' · <span class="text-amber-300">intercepted</span>: no cusp falls in this sign' : ''}`;
+        }
         const nakStart = Math.floor(idx * 30 / (360 / 27)), nakEnd = Math.floor((idx * 30 + 29.999) / (360 / 27));
         const naks = [];
         for (let n = nakStart; n <= nakEnd; n++) naks.push(link('nakshatra', String(n), LORE.nakshatras[n].name, 'underline'));
@@ -1573,7 +1676,7 @@ function renderDetail(type, key) {
             </div>
             <div class="mt-3">${factTable([
                 ['Tropical Sun', z.dates], ['Sidereal Sun', z.sidDates], ['Body', z.body],
-                ['House', houseNum ? `${ordinal(houseNum)} house from your Ascendant` : `${ordinal(idx + 1)} (natural zodiac)`],
+                ['House', houseText],
                 ['Nakshatras', naks.join(', ') + ' <span class="text-slate-500">(sidereal)</span>']
             ])}</div>`),
             card('Currently here', here.length
@@ -1588,10 +1691,12 @@ function renderDetail(type, key) {
         const h = LORE.houses[key];
         const n = Number(key);
         let occupancy = '<p class="text-sm text-slate-500">Set your location (left panel) to see which sign and planets occupy this house right now. Without a location the wheel shows the natural houses (Aries = 1st).</p>';
-        if (angles) {
-            const sign = ZODIAC[(signIndex(angles.asc) + n - 1) % 12];
-            const here = bodies.filter(b => pos[b.id].sign === sign);
-            occupancy = `<div class="text-sm mb-2">Sign on this house: ${signLink(sign)}</div>
+        if (houses) {
+            const cusp = houses.cusps[n - 1], size = norm360(houses.cusps[n % 12] - cusp);
+            const here = bodies.filter(b => houseOf(pos[b.id].lon, houses) === n);
+            occupancy = (houses.signBased
+                ? `<div class="text-sm mb-2">Sign on this house: ${signLink(signName(cusp))}</div>`
+                : `<div class="text-sm mb-2">Cusp: ${posLink(cusp)} · ${size.toFixed(1)}° wide</div>`) + `
                 ${here.length ? `<ul class="flex flex-col gap-1 text-sm">${here.map(b => `<li>${planetLink(b.id)} <span class="text-slate-500 font-mono">${fmtDegInSign(pos[b.id].lon)}</span></li>`).join('')}</ul>` : '<p class="text-sm text-slate-500">Empty right now.</p>'}`;
         }
         return [
@@ -1600,7 +1705,7 @@ function renderDetail(type, key) {
                 <div class="flex flex-wrap gap-1 mt-3">${h.keywords.map(k => chip(k)).join(' ')}</div>`),
             card('Right now', occupancy + `<p class="text-sm text-slate-400 mt-3">${h.transit}</p>`, 'text-emerald-400'),
             loreBlocks(h.classic, h.vedic),
-            card('', `<p class="text-xs text-slate-500">House systems vary (Placidus, Koch, Equal, Whole Sign). This app uses Whole Sign houses, the system of Hellenistic and Vedic astrology, where each sign is one house counted from the rising sign.</p>`)
+            card('', `<p class="text-xs text-slate-500"><b class="text-slate-400">${HOUSE_SYSTEMS[state.houseSystem].name}:</b> ${HOUSE_SYSTEMS[state.houseSystem].note}${houses?.fallback ? ` Placidus has no solution at this latitude right now, so ${houses.fallback} cusps (each quadrant trisected) are shown.` : ''} Change the system under Houses in the left panel.</p>`)
         ].join('');
     }
 
@@ -1790,12 +1895,13 @@ function updateApp() {
 
     current.pos = computePositions(date);
     current.angles = computeAngles(date, state.location);
+    current.houses = computeHouses(date, state.location, current.pos);
     current.aspects = computeAspects(current.pos);
     current.drishti = computeDrishti(current.pos);
 
     updatePlanets(current.pos);
     updatePlanetTicks(current.pos);
-    updateHouses(current.angles);
+    updateHouses(current.houses);
     updateStars(date);
     updateAngles(current.angles);
     if (state.mode === 'sidereal') updateDrishtiLines(current.drishti, current.pos);
@@ -1865,6 +1971,19 @@ function setNodeType(type) {
     updateApp();
 }
 
+function setHouseSystem(id) {
+    state.houseSystem = id;
+    saveSettings();
+    syncHouseControls();
+    updateApp();
+}
+
+function syncHouseControls() {
+    const sys = HOUSE_SYSTEMS[state.houseSystem];
+    document.getElementById('house-system').value = state.houseSystem;
+    document.getElementById('house-note').textContent = sys.note + (sys.needsLocation && !state.location ? ' Set a location to see these houses.' : '');
+}
+
 function toggleLayer(layerName, checked) {
     state.layers[layerName] = checked;
     saveSettings();
@@ -1918,6 +2037,7 @@ function syncLocationInputs() {
     const loc = state.location;
     document.getElementById('lat-input').value = loc ? loc.lat : '';
     document.getElementById('lon-input').value = loc ? loc.lon : '';
+    syncHouseControls();
     setLocationStatus(loc
         ? `Houses & Ascendant for ${Math.abs(loc.lat).toFixed(2)}°${loc.lat >= 0 ? 'N' : 'S'}, ${Math.abs(loc.lon).toFixed(2)}°${loc.lon >= 0 ? 'E' : 'W'}`
         : 'No location set: houses shown as the natural zodiac.');
@@ -1969,6 +2089,8 @@ function bindEvents() {
         cb.checked = state.layers[cb.dataset.layer];
         cb.addEventListener('change', () => toggleLayer(cb.dataset.layer, cb.checked));
     });
+    document.getElementById('house-system').addEventListener('change', e => setHouseSystem(e.target.value));
+    syncHouseControls();
     document.querySelectorAll('[data-node]').forEach(b => {
         b.classList.toggle('seg-active', b.dataset.node === state.nodeType);
         b.addEventListener('click', () => setNodeType(b.dataset.node));

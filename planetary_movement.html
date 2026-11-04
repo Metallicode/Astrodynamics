@@ -290,6 +290,23 @@
             <p id="location-status" class="text-xs mt-2 text-slate-500"></p>
         </div>
 
+        <!-- House system -->
+        <div>
+            <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-widest mb-2">Houses</h3>
+            <select id="house-system" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-sm">
+                <optgroup label="From the Ascendant (needs a location)">
+                    <option value="whole">Whole Sign</option>
+                    <option value="equal">Equal</option>
+                    <option value="placidus">Placidus</option>
+                </optgroup>
+                <optgroup label="From a luminary">
+                    <option value="moon">Moon sign (Chandra Lagna)</option>
+                    <option value="sun">Sun sign (Surya Lagna)</option>
+                </optgroup>
+            </select>
+            <p id="house-note" class="text-xs text-slate-500 mt-2"></p>
+        </div>
+
         <!-- Layer Toggles -->
         <div class="flex flex-col gap-2">
             <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-widest mb-1">View Layers</h3>
@@ -310,7 +327,7 @@
         </div>
 
         <div class="mt-auto pt-2 text-xs text-slate-600 leading-relaxed">
-            Geocentric apparent positions on the true ecliptic of date via astronomy-engine. Mean or true lunar nodes, whole sign houses, Lahiri ayanamsa, IAU constellation borders.
+            Geocentric apparent positions on the true ecliptic of date via astronomy-engine. Mean or true lunar nodes, Whole Sign / Equal / Placidus / Moon / Sun houses (Porphyry fallback near the poles), Lahiri ayanamsa, IAU constellation borders.
         </div>
     </aside>
 
