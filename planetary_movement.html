@@ -145,14 +145,22 @@
         .seg-sm .seg-btn { padding: 3px 10px; font-size: 0.75rem; flex: none; }
         body.atlas-open main { padding: 0.75rem; }
         body.atlas-open #view-switch { top: 0.75rem; left: 0.75rem; }
-        body.moon-open main { justify-content: flex-start; align-items: stretch; overflow-y: auto; }
-        @media (min-width: 1280px) { body.moon-open main { height: 100vh; } }
+        body.dash-open main { justify-content: flex-start; align-items: stretch; overflow-y: auto; }
+        @media (min-width: 1280px) { body.dash-open main { height: 100vh; } }
         .moon-card { background: rgba(15, 23, 42, 0.65); border: 1px solid #1e293b; border-radius: 1rem; padding: 1rem; }
         .moon-h { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
         #moon-orbit { touch-action: none; cursor: grab; user-select: none; }
         #moon-strip-box { touch-action: pan-y; cursor: grab; user-select: none; }
         #moon-strip text, #moon-orbit text { user-select: none; }
-        #moon-view svg text { font-family: inherit; }
+        #moon-view svg text, #aspects-view svg text { font-family: inherit; }
+        #aspects-view svg text { user-select: none; }
+        .asp-cell { width: 1.9rem; height: 1.9rem; text-align: center; font-size: 0.95rem; border: 1px solid #1e293b; cursor: pointer; }
+        .asp-cell:hover { outline: 1px solid #64748b; }
+        .asp-cell-sel { outline: 2px solid #38bdf8 !important; }
+        .asp-head { width: 1.9rem; height: 1.9rem; text-align: center; font-size: 1rem; }
+        .asp-bar { height: 6px; border-radius: 3px; background: #1e293b; overflow: hidden; }
+        .asp-bar > div { height: 100%; border-radius: 3px; }
+        .asp-input { background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem; padding: 2px 6px; font-size: 0.8rem; }
 
         .link-btn { color: inherit; text-align: left; }
         .link-btn:hover { color: #93c5fd; }
@@ -337,6 +345,7 @@
             <button class="seg-btn" data-view="wheel">☸ Wheel</button>
             <button class="seg-btn" data-view="atlas">🔭 Sky Atlas</button>
             <button class="seg-btn" data-view="moon">🌙 Moon</button>
+            <button class="seg-btn" data-view="aspects">△ Aspects</button>
         </div>
         <div id="wheel-view" class="w-full flex flex-col items-center">
         <div class="absolute top-4 right-4 z-30 flex flex-col items-center gap-1" id="zoom-controls">
@@ -484,6 +493,60 @@
             <div id="moon-learn-myth" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
             <div class="text-[10px] text-slate-600 pb-4">Ephemeris: astronomy-engine. Nakshatras: 27 equal 13°20′ divisions of the Lahiri sidereal zodiac. Yogataras after the Surya Siddhanta as commonly identified; some identifications are disputed.</div>
         </div>
+
+        <div id="aspects-view" class="hidden w-full flex flex-col gap-3 pt-10">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-lg seg-sm max-w-full overflow-x-auto" title="Date and time">
+                    <button class="seg-btn" data-asp-time="-1w" title="1 week back">−1w</button>
+                    <button class="seg-btn" data-asp-time="-1d" title="1 day back">−1d</button>
+                    <button class="seg-btn" data-asp-time="-1h" title="1 hour back">−1h</button>
+                    <span id="asp-clock" class="font-mono text-xs text-slate-200 px-2 whitespace-nowrap"></span>
+                    <button class="seg-btn" data-asp-time="1h" title="1 hour forward">+1h</button>
+                    <button class="seg-btn" data-asp-time="1d" title="1 day forward">+1d</button>
+                    <button class="seg-btn" data-asp-time="1w" title="1 week forward">+1w</button>
+                    <button class="seg-btn text-sky-300" data-asp-time="now">Now</button>
+                </div>
+                <div class="flex gap-1 bg-slate-800 p-1 rounded-lg seg-sm" title="Animate">
+                    <button class="seg-btn" data-asp-anim="hour" data-label="Hours" title="2 hours per frame: watch the Moon's aspects form and dissolve">▶ Hours</button>
+                    <button class="seg-btn" data-asp-anim="day" data-label="Days" title="1 day per frame: watch the fast planets' aspects">▶ Days</button>
+                    <button class="seg-btn" data-asp-anim="week" data-label="Weeks" title="1 week per frame: watch the slow planets">▶ Weeks</button>
+                </div>
+                <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-lg seg-sm" title="Orb system">
+                    <span class="text-[11px] text-slate-500 px-1">Orbs</span>
+                    <button class="seg-btn" data-asp-orbs="modern" title="Orbs belong to the aspect (modern)">Modern</button>
+                    <button class="seg-btn" data-asp-orbs="moiety" title="Orbs belong to the planets (traditional moieties)">Moieties</button>
+                </div>
+                <label class="atlas-toggle" title="Semi-sextile, semi-square, sesquiquadrate, quintile, bi-quintile. Also affects the Wheel."><input type="checkbox" id="asp-minor">Minor aspects</label>
+                <div class="flex items-center gap-1 text-xs text-slate-400">
+                    <span>Compare with</span>
+                    <select id="asp-chart" class="asp-input"></select>
+                </div>
+            </div>
+
+            <div id="asp-chart-form" class="hidden moon-card"></div>
+
+            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3 items-start">
+                <div class="flex flex-col gap-3">
+                    <section class="moon-card" id="asp-lab"></section>
+                    <section class="moon-card" id="asp-cycle"></section>
+                </div>
+                <section class="moon-card" id="asp-factors"></section>
+            </div>
+
+            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+                <section class="moon-card" id="asp-graph"></section>
+                <section class="moon-card overflow-x-auto" id="asp-grid"></section>
+            </div>
+
+            <section class="moon-card" id="asp-calendar"></section>
+
+            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+                <section class="moon-card" id="asp-patterns"></section>
+                <section class="moon-card" id="asp-harmonics"></section>
+            </div>
+            <div id="asp-learn" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+            <div class="text-[10px] text-slate-600 pb-4">Aspects are measured on the tropical ecliptic (separations are the same in every zodiac). Sign relationships follow the selected zodiac mode. Cycle phases after Dane Rudhyar. Traditional moieties after Abu Ma'shar and al-Biruni.</div>
+        </div>
     </main>
 
     <!-- Info Sidebar (Right) -->
@@ -503,8 +566,10 @@
     <script src="sky-data.js"></script>
     <script src="sky-lore.js"></script>
     <script src="moon-lore.js"></script>
+    <script src="aspect-lore.js"></script>
     <script src="app.js"></script>
     <script src="atlas.js"></script>
     <script src="moon.js"></script>
+    <script src="aspects.js"></script>
 </body>
 </html>

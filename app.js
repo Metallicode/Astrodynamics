@@ -37,10 +37,14 @@ for (const b of bodies) {
 const BODY = Object.fromEntries(bodies.map(b => [b.id, b]));
 const PLANET_IDS = bodies.filter(b => !b.node).map(b => b.id);
 const ASPECT_TYPES = ["conjunction", "sextile", "square", "trine", "quincunx", "opposition"];
+// Minor aspects (defined in aspect-lore.js) are shown only when the Aspects view's toggle is on.
+const MINOR_ASPECTS = ["semisextile", "semisquare", "quintile", "sesquiquadrate", "biquintile"];
 const ASPECT_COLORS = {
     conjunction: "#e2e8f0", sextile: "#38bdf8", trine: "#4ade80",
-    square: "#f87171", opposition: "#fb923c", quincunx: "#c084fc"
+    square: "#f87171", opposition: "#fb923c", quincunx: "#c084fc",
+    semisextile: "#94a3b8", semisquare: "#fda4af", sesquiquadrate: "#f472b6", quintile: "#fde047", biquintile: "#facc15"
 };
+const PTOLEMAIC = ["conjunction", "sextile", "square", "trine", "opposition"];
 const ELEMENT_COLORS = { Fire: "#f87171", Earth: "#a3e635", Air: "#fde047", Water: "#60a5fa" };
 // The nine Vedic grahas and their sign-based aspects (graha drishti), counted inclusively.
 const GRAHAS = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "NorthNode", "SouthNode"];
@@ -56,6 +60,8 @@ const state = {
     mode: 'tropical',            // 'tropical' | 'sidereal' | 'astronomical'
     view: 'wheel',               // 'wheel' | 'atlas' (the Sky Atlas, atlas.js) | 'moon' (moon.js)
     nodeType: 'mean',            // 'mean' | 'true'
+    orbSystem: 'modern',         // 'modern' (orb per aspect) | 'moiety' (traditional orb per planet)
+    minorAspects: false,
     houseSystem: 'whole',        // a key of HOUSE_SYSTEMS
     location: null,              // { lat, lon }
     layers: {
@@ -77,6 +83,8 @@ function loadSettings() {
         if (saved.mode) state.mode = saved.mode;
         if (saved.nodeType) state.nodeType = saved.nodeType;
         if (saved.houseSystem in HOUSE_SYSTEMS) state.houseSystem = saved.houseSystem;
+        if (saved.orbSystem) state.orbSystem = saved.orbSystem;
+        if (typeof saved.minorAspects === 'boolean') state.minorAspects = saved.minorAspects;
         if (saved.location) state.location = saved.location;
         if (saved.layers) Object.assign(state.layers, saved.layers);
         if (saved.eventDays) state.eventDays = saved.eventDays;
@@ -89,8 +97,8 @@ function loadSettings() {
 }
 
 function saveSettings() {
-    const { mode, nodeType, houseSystem, location, layers, eventDays, eventMoon, playStep, view } = state;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, nodeType, houseSystem, location, layers, eventDays, eventMoon, playStep, view }));
+    const { mode, nodeType, houseSystem, orbSystem, minorAspects, location, layers, eventDays, eventMoon, playStep, view } = state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, nodeType, houseSystem, orbSystem, minorAspects, location, layers, eventDays, eventMoon, playStep, view }));
 }
 
 // ---------------------------------------------------------------------------
@@ -387,23 +395,40 @@ function houseOf(lon, houses) {
 
 const houseSystemName = () => HOUSE_SYSTEMS[state.houseSystem].short + (current.houses?.fallback ? ` → ${current.houses.fallback}` : '');
 
+const activeAspectTypes = () => state.minorAspects ? [...ASPECT_TYPES, ...MINOR_ASPECTS] : ASPECT_TYPES;
+
+// Allowed orb for an aspect between two bodies (ids may be natal points such as ASC), under the chosen orb system.
+function aspectOrb(type, idA, idB) {
+    const asp = LORE.aspects[type];
+    if (state.orbSystem === 'moiety') {
+        const sum = ASPECT_LORE.natures[idA].moiety + ASPECT_LORE.natures[idB].moiety;
+        return PTOLEMAIC.includes(type) ? sum : sum / 3;
+    }
+    const luminary = ['Sun', 'Moon'].includes(idA) || ['Sun', 'Moon'].includes(idB);
+    return asp.orb + (luminary ? (PTOLEMAIC.includes(type) ? 2 : 1) : 0);
+}
+
+// The aspect (if any) between two longitudes, with speeds in °/day to tell applying from separating.
+function aspectBetween(idA, lonA, speedA, idB, lonB, speedB) {
+    const sep = Math.abs(wrap180(lonA - lonB));
+    // Separation a short while later
+    const sepLater = Math.abs(wrap180((lonA + speedA * 0.01) - (lonB + speedB * 0.01)));
+    let best = null;
+    for (const type of activeAspectTypes()) {
+        const angle = LORE.aspects[type].angle;
+        const orb = Math.abs(sep - angle), allowed = aspectOrb(type, idA, idB);
+        if (orb <= allowed && (!best || orb < best.orb)) best = { type, orb, allowed, sep, applying: Math.abs(sepLater - angle) < orb };
+    }
+    return best;
+}
+
 function computeAspects(pos) {
     const list = [];
     for (let i = 0; i < PLANET_IDS.length; i++) {
         for (let j = i + 1; j < PLANET_IDS.length; j++) {
             const a = pos[PLANET_IDS[i]], b = pos[PLANET_IDS[j]];
-            const sep = Math.abs(wrap180(a.trop - b.trop));
-            // Separation a short while later, to tell applying from separating
-            const sepLater = Math.abs(wrap180((a.trop + a.speed * 0.01) - (b.trop + b.speed * 0.01)));
-            const luminary = ['Sun', 'Moon'].includes(a.id) || ['Sun', 'Moon'].includes(b.id);
-            for (const type of ASPECT_TYPES) {
-                const asp = LORE.aspects[type];
-                const orb = Math.abs(sep - asp.angle);
-                const allowed = asp.orb + (luminary ? (type === 'quincunx' ? 1 : 2) : 0);
-                if (orb <= allowed) {
-                    list.push({ a: a.id, b: b.id, type, orb, applying: Math.abs(sepLater - asp.angle) < orb });
-                }
-            }
+            const asp = aspectBetween(a.id, a.trop, a.speed, b.id, b.trop, b.speed);
+            if (asp) list.push({ a: a.id, b: b.id, ...asp });
         }
     }
     return list.sort((x, y) => x.orb - y.orb);
@@ -877,13 +902,14 @@ function updateAspectLines(aspects, pos) {
     for (const asp of aspects) {
         if (asp.type === 'conjunction') continue;
         const p = polar(R.aspect, pos[asp.a].lon), q = polar(R.aspect, pos[asp.b].lon);
-        const strength = 1 - asp.orb / (LORE.aspects[asp.type].orb + 2);
+        const strength = 1 - asp.orb / asp.allowed;
         const line = svgEl('line', {
             x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: ASPECT_COLORS[asp.type],
             'stroke-width': (0.25 + strength * 0.6).toFixed(2), 'stroke-opacity': (0.35 + strength * 0.55).toFixed(2),
-            'stroke-dasharray': asp.type === 'quincunx' ? '1,1' : ''
+            'stroke-dasharray': asp.type === 'quincunx' ? '1,1' : LORE.aspects[asp.type].minor ? '0.6,1.2' : ''
         }, g);
-        line.addEventListener('click', () => openDetail('aspectPair', `${asp.a}|${asp.b}|${asp.type}`));
+        line.style.cursor = 'pointer';
+        line.addEventListener('click', () => openAspectLab(asp.a, asp.b, asp.type));
     }
 }
 
@@ -1273,8 +1299,8 @@ function renderPanel() {
 let panelTimer = null;
 function schedulePanelRender() {
     clearTimeout(panelTimer);
-    // While the Moon view animates, the panel waits until the clock stops.
-    panelTimer = setTimeout(renderPanel, state.playTimer ? 0 : moon.anim ? 400 : 30);
+    // While the Moon or Aspects view animates, the panel waits until the clock stops.
+    panelTimer = setTimeout(renderPanel, state.playTimer ? 0 : (moon.anim || aview.anim) ? 400 : 30);
 }
 
 function renderSky() {
@@ -1526,7 +1552,7 @@ function renderLibrary(resultsOnly = false) {
         .map(n => pill('zodiac', n, `${signSymbol(n)} ${n}`));
     const houses = Object.entries(LORE.houses).filter(([k, h]) => match(h.name, h.sanskrit, h.keywords.join(' '), `house ${k}`))
         .map(([k, h]) => pill('houses', k, `${ROMAN[k - 1]} ${h.name.replace('House of ', '')}`));
-    const aspects = ASPECT_TYPES.filter(k => match(k, LORE.aspects[k].nature))
+    const aspects = [...ASPECT_TYPES, ...MINOR_ASPECTS].filter(k => match(k, LORE.aspects[k].nature))
         .map(k => pill('aspect', k, `<span style="color:${ASPECT_COLORS[k]}">${LORE.aspects[k].symbol}</span> ${LORE.aspects[k].name}`));
     const phases = LORE.phases.slice(0, 8).map((p, i) => [p, i]).filter(([p]) => match(p.name, 'moon phase'))
         .map(([p, i]) => pill('phase', i, `${p.emoji} ${p.name}`));
@@ -1710,12 +1736,22 @@ function renderDetail(type, key) {
     }
 
     if (type === 'aspect') {
-        const a = LORE.aspects[key];
+        const a = LORE.aspects[key], X = ASPECT_LORE.aspects[key];
         const now = aspects.filter(x => x.type === key);
         return [
-            detailHeader(a.symbol, a.name, `${a.angle}° · ${a.nature} · orb ${a.orb}°`, ASPECT_COLORS[key]),
-            card('', `<div class="flex flex-wrap gap-1">${a.keywords.map(k => chip(k)).join(' ')}</div>`),
+            detailHeader(a.symbol, a.name, `${a.angle}° · ${a.nature} · ${a.minor ? 'minor' : X.ptolemaic ? 'Ptolemaic' : 'major'} aspect`, ASPECT_COLORS[key]),
+            card('', `<div class="flex flex-wrap gap-1">${a.keywords.map(k => chip(k)).join(' ')}</div>
+                <div class="mt-3">${factTable([
+                    ['Harmonic', `360° ÷ ${X.harmonic}${X.harmonic === 12 && a.angle === 150 ? ' × 5' : X.harmonic === 5 && a.angle === 144 ? ' × 2' : X.harmonic === 8 && a.angle === 135 ? ' × 3' : ''}`],
+                    ['Signs', X.relation],
+                    ['Feels', X.feel],
+                    ['Modern orb', `${a.orb}° (+${PTOLEMAIC.includes(key) ? 2 : 1}° with the Sun or Moon)`]
+                ])}</div>`),
             loreBlocks(a.classic, a.vedic),
+            card('In practice', `<p class="text-sm text-slate-300 leading-relaxed">${X.practice}</p>
+                <p class="text-sm text-emerald-300/90 leading-relaxed mt-2"><b>Gift:</b> ${X.gift}</p>
+                <p class="text-sm text-rose-300/90 leading-relaxed mt-1"><b>Shadow:</b> ${X.shadow}</p>
+                ${X.waxing ? `<p class="text-sm text-slate-400 leading-relaxed mt-2">${X.waxing}</p><p class="text-sm text-slate-400 leading-relaxed mt-1">${X.waning}</p>` : ''}`, 'text-sky-400'),
             card('Active now', now.length ? `<ul class="flex flex-col gap-1">${now.map(aspectRow).join('')}</ul>` : '<p class="text-sm text-slate-500">None within orb.</p>', 'text-sky-400')
         ].join('');
     }
@@ -1734,7 +1770,8 @@ function renderDetail(type, key) {
                 <div>${planetLink(idb)} in ${signLink(pos[idb].sign)}: <span class="text-slate-400">${B.keywords.slice(0, 4).join(', ')}</span></div>
             </div>`),
             card('Vedic view', `<p class="text-sm text-slate-300 leading-relaxed">${a.vedic}</p>`, 'text-orange-400'),
-            card('', link('aspect', t, `More about the ${a.name.toLowerCase()} →`, 'text-blue-400 text-sm'))
+            card('', `<div class="flex flex-col gap-2 items-start">${state.view !== 'aspects' ? `<button class="text-sm text-sky-300 hover:text-white" data-aspect-lab="${ida}|${idb}">△ Take this pair apart in the Aspect Lab →</button>` : ''}
+                ${link('aspect', t, `More about the ${a.name.toLowerCase()} →`, 'text-blue-400 text-sm')}</div>`)
         ].join('');
     }
 
@@ -1911,6 +1948,7 @@ function updateApp() {
     else scaleSvgDetail();
     renderAtlas();
     renderMoon();
+    renderAspects();
 
     document.getElementById('ayanamsa-display').innerText = isAstro()
         ? `Real IAU constellation borders (unequal sizes, incl. Ophiuchus) · ayanamsa ${fmtOrb(ayanamsa(date))}`
@@ -2132,6 +2170,7 @@ function init() {
     bindEvents();
     bindZoom();
     bindMoon();
+    bindAspects();
     bindAtlas();
     syncLocationInputs();
     updateApp();
