@@ -587,12 +587,14 @@ function setView(view) {
     document.getElementById('atlas-view').classList.toggle('hidden', view !== 'atlas');
     document.getElementById('moon-view').classList.toggle('hidden', view !== 'moon');
     document.getElementById('aspects-view').classList.toggle('hidden', view !== 'aspects');
+    document.getElementById('pair-view').classList.toggle('hidden', view !== 'pair');
     // The atlas, moon and aspects views want all the room they can get: the left control pane hides, and a compact clock takes over.
     document.getElementById('control-pane').classList.toggle('hidden', view !== 'wheel');
     document.body.classList.toggle('atlas-open', view !== 'wheel');
-    document.body.classList.toggle('dash-open', view === 'moon' || view === 'aspects');
+    document.body.classList.toggle('dash-open', ['moon', 'aspects', 'pair'].includes(view));
     if (view !== 'moon') stopMoonAnim();
     if (view !== 'aspects') stopAspectAnim();
+    if (view !== 'pair') stopPairAnim();
     document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('seg-active', b.dataset.view === view));
     if (view === 'atlas') {
         // The atlas is all about your own sky: ask for the location once, if we don't have it.
@@ -605,6 +607,7 @@ function setView(view) {
         renderMoon();
     }
     if (view === 'aspects') renderAspects();
+    if (view === 'pair') renderPair();
     if (current.pos) renderPanel();
 }
 
@@ -725,5 +728,5 @@ function bindAtlas() {
     });
 
     new ResizeObserver(() => renderAtlas()).observe(chart);
-    setView(['atlas', 'moon', 'aspects'].includes(state.view) ? state.view : 'wheel');
+    setView(['atlas', 'moon', 'aspects', 'pair'].includes(state.view) ? state.view : 'wheel');
 }

@@ -160,6 +160,8 @@
         .asp-head { width: 1.9rem; height: 1.9rem; text-align: center; font-size: 1rem; }
         .asp-bar { height: 6px; border-radius: 3px; background: #1e293b; overflow: hidden; }
         .asp-bar > div { height: 100%; border-radius: 3px; }
+        #pair-sphere { width: 100%; aspect-ratio: 1 / 1; max-height: 78vh; touch-action: none; cursor: grab; display: block; }
+        #pair-view svg text { font-family: inherit; user-select: none; }
         .asp-input { background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem; padding: 2px 6px; font-size: 0.8rem; }
 
         .link-btn { color: inherit; text-align: left; }
@@ -346,6 +348,7 @@
             <button class="seg-btn" data-view="atlas">🔭 Sky Atlas</button>
             <button class="seg-btn" data-view="moon">🌙 Moon</button>
             <button class="seg-btn" data-view="aspects">△ Aspects</button>
+            <button class="seg-btn" data-view="pair">⚭ Pair</button>
         </div>
         <div id="wheel-view" class="w-full flex flex-col items-center">
         <div class="absolute top-4 right-4 z-30 flex flex-col items-center gap-1" id="zoom-controls">
@@ -547,6 +550,84 @@
             <div id="asp-learn" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
             <div class="text-[10px] text-slate-600 pb-4">Aspects are measured on the tropical ecliptic (separations are the same in every zodiac). Sign relationships follow the selected zodiac mode. Cycle phases after Dane Rudhyar. Traditional moieties after Abu Ma'shar and al-Biruni.</div>
         </div>
+        <div id="pair-view" class="hidden w-full flex flex-col gap-3 pt-10">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div class="flex items-center gap-2 text-xs text-slate-400">
+                    <span class="inline-block w-2.5 h-2.5 rounded-full border-2" style="border-color:#2dd4bf"></span>
+                    <select id="pair-pick-a" class="asp-input max-w-[9rem] sm:max-w-none"></select>
+                    <button class="seg-btn bg-slate-800 px-2 rounded" data-pair-action="swap" title="Swap the inner and outer person">⇄</button>
+                    <span class="inline-block w-2.5 h-2.5 rounded-full border-2" style="border-color:#c084fc"></span>
+                    <select id="pair-pick-b" class="asp-input max-w-[9rem] sm:max-w-none"></select>
+                </div>
+                <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-lg seg-sm" title="What the middle shell shows">
+                    <span class="text-[11px] text-slate-500 px-1">Us</span>
+                    <button class="seg-btn" data-pair-us="moment" title="A real sky: the selected moment of the spectrum (½ = the Davison chart)">Spectrum moment</button>
+                    <button class="seg-btn" data-pair-us="composite" title="Midpoints of each pair of planets: not a real sky">Composite</button>
+                </div>
+            </div>
+
+            <div id="pair-chart-form" class="hidden moon-card"></div>
+            <section id="pair-empty" class="hidden moon-card"></section>
+
+            <div id="pair-main" class="flex flex-col gap-3">
+                <div class="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] gap-3 items-start">
+                    <section class="moon-card flex flex-col gap-2">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                            <h3 class="moon-h text-sky-300">You · Us · Me</h3>
+                            <div class="flex gap-1 bg-slate-800 p-1 rounded-lg seg-sm" title="Which threads to draw">
+                                <button class="seg-btn" data-pair-threads="ab" title="Contacts between the two people">A ↔ B</button>
+                                <button class="seg-btn" data-pair-threads="us" title="Contacts from the middle sky to each person">Us ↔ both</button>
+                            </div>
+                            <button class="bg-slate-700 hover:bg-slate-600 rounded px-2 py-0.5 text-xs" data-pair-action="flat" id="pair-flat"></button>
+                            <div class="flex gap-1 ml-auto">
+                                <button class="zoom-btn !w-7 !h-7" data-pair-action="zoom-in" title="Zoom in">+</button>
+                                <button class="zoom-btn !w-7 !h-7" data-pair-action="zoom-out" title="Zoom out">−</button>
+                                <button class="zoom-btn !w-7 !h-7" data-pair-action="reset" title="Reset the view">⟲</button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-x-3 gap-y-1">
+                            <label class="atlas-toggle" title="Each birth's horizon (dashed) and meridian (dotted): where the Ascendant and Midheaven come from"><input type="checkbox" id="pair-horizons">Birth horizons</label>
+                            <label class="atlas-toggle" title="The celestial equator: declinations (and parallels) are measured from it"><input type="checkbox" id="pair-equator">Celestial equator</label>
+                            <label class="atlas-toggle" title="Planets' ecliptic latitudes are small (the Moon reaches 5°, Pluto 17°): stretch them to see them"><input type="checkbox" id="pair-latX">Latitude ×4</label>
+                            <label class="atlas-toggle"><input type="checkbox" id="pair-spin">Spin</label>
+                        </div>
+                        <div class="relative">
+                            <canvas id="pair-sphere"></canvas>
+                            <div id="pair-tip" class="hidden absolute z-20 bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2 text-xs shadow-xl pointer-events-none max-w-[16rem]"></div>
+                        </div>
+                        <div id="pair-legend" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300"></div>
+                        <div id="pair-focus"></div>
+                    </section>
+                    <div class="flex flex-col gap-3">
+                        <section class="moon-card" id="pair-profile"></section>
+                        <section class="moon-card" id="pair-contacts"></section>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3 items-start">
+                    <section class="moon-card" id="pair-ashtakoot"></section>
+                    <section class="moon-card" id="pair-elements"></section>
+                </div>
+
+                <section class="moon-card" id="pair-overlays"></section>
+
+                <section class="moon-card" id="pair-spectrum"></section>
+
+                <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3 items-start">
+                    <section class="moon-card" id="pair-moment"></section>
+                    <section class="moon-card" id="pair-echoes"></section>
+                </div>
+
+                <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3 items-start">
+                    <section class="moon-card" id="pair-weather"></section>
+                    <section class="moon-card overflow-x-auto" id="pair-agegap"></section>
+                </div>
+
+                <section class="moon-card overflow-x-auto" id="pair-matrix"></section>
+                <div id="pair-learn" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+                <div class="text-[10px] text-slate-600 pb-4">Positions are geocentric and apparent, on the ecliptic of date; aspects use the orb system and minor-aspect setting of the Aspects view. Parallels use a 1° orb. Davison chart after Ronald Davison (1977); the harmonic spectrum and its echoes are this app's own experiment. Ashtakoot uses the sidereal (Lahiri) Moon in one common reckoning; tables vary between schools.</div>
+            </div>
+        </div>
     </main>
 
     <!-- Info Sidebar (Right) -->
@@ -567,9 +648,11 @@
     <script src="sky-lore.js"></script>
     <script src="moon-lore.js"></script>
     <script src="aspect-lore.js"></script>
+    <script src="pair-lore.js"></script>
     <script src="app.js"></script>
     <script src="atlas.js"></script>
     <script src="moon.js"></script>
     <script src="aspects.js"></script>
+    <script src="pair.js"></script>
 </body>
 </html>

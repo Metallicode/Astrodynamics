@@ -1019,8 +1019,8 @@ function tzOffsetFor(localValue) {
     return -d.getTimezoneOffset() / 60;
 }
 
-function openChartForm(chart) {
-    const el = document.getElementById('asp-chart-form');
+function openChartForm(chart, elId = 'asp-chart-form') {
+    const el = document.getElementById(elId);
     aview.deleteArmed = false;
     let local = '', offset = tzOffsetFor(), lat = state.location?.lat ?? '', lon = state.location?.lon ?? '';
     if (chart) {
@@ -1049,22 +1049,28 @@ function openChartForm(chart) {
     el.querySelector('#cf-date').addEventListener('change', e => { if (!chart) el.querySelector('#cf-offset').value = tzOffsetFor(e.target.value); });
 }
 
-function saveChartForm(id) {
-    const el = document.getElementById('asp-chart-form');
+// Validates and stores the form's chart; returns it, or null when the form shows an error.
+function saveChartForm(id, elId = 'asp-chart-form') {
+    const el = document.getElementById(elId);
     const v = sel => el.querySelector(sel).value.trim();
     const msg = t => { el.querySelector('#cf-msg').textContent = t; el.querySelector('#cf-msg').className = 'text-xs text-rose-400 w-full'; };
     const name = v('#cf-name') || 'Chart', local = v('#cf-date'), offset = parseFloat(v('#cf-offset'));
-    if (!local || isNaN(offset)) return msg('Enter the date, time and UTC offset.');
+    if (!local || isNaN(offset)) { msg('Enter the date, time and UTC offset.'); return null; }
     const lat = v('#cf-lat') === '' ? null : parseFloat(v('#cf-lat')), lon = v('#cf-lon') === '' ? null : parseFloat(v('#cf-lon'));
-    if ((lat === null) !== (lon === null) || (lat !== null && (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 89.9 || Math.abs(lon) > 180))) return msg('Enter both latitude (−89.9…89.9) and longitude (−180…180), or neither.');
+    if ((lat === null) !== (lon === null) || (lat !== null && (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 89.9 || Math.abs(lon) > 180))) { msg('Enter both latitude (−89.9…89.9) and longitude (−180…180), or neither.'); return null; }
     // The local wall-clock time minus the offset gives UTC.
     const date = new Date(Date.parse(local + ':00Z') - offset * HOUR_MS);
-    if (isNaN(date)) return msg('That date is not valid.');
+    if (isNaN(date)) { msg('That date is not valid.'); return null; }
     const chart = { id: id || `c${Date.now().toString(36)}`, name, date: date.toISOString(), offset, lat, lon };
     const i = aview.charts.findIndex(c => c.id === chart.id);
     if (i >= 0) aview.charts[i] = chart; else aview.charts.push(chart);
-    setChart(chart.id);
     el.classList.add('hidden');
+    return chart;
+}
+
+function deleteChart(id) {
+    aview.charts = aview.charts.filter(c => c.id !== id);
+    saveAspects();
 }
 
 function setChart(id) {
@@ -1151,11 +1157,11 @@ function bindAspects() {
         else if (d.aspHarmonic) { aview.harmonic = Number(d.aspHarmonic); saveAspects(); renderHarmonics(); }
         else if (d.aspPattern) { aview.pattern = aview.pattern === d.aspPattern ? null : d.aspPattern; renderPatterns(); }
         else if (d.aspAction === 'swap') selectPair(aview.b, aview.a);
-        else if (d.aspAction === 'chart-save') saveChartForm(d.id);
+        else if (d.aspAction === 'chart-save') { const c = saveChartForm(d.id); if (c) setChart(c.id); }
         else if (d.aspAction === 'chart-cancel') { document.getElementById('asp-chart-form').classList.add('hidden'); syncAspectControls(); }
         else if (d.aspAction === 'chart-delete') {
             if (!aview.deleteArmed) { aview.deleteArmed = true; t.textContent = 'Click again to delete'; return; }
-            aview.charts = aview.charts.filter(c => c.id !== d.id);
+            deleteChart(d.id);
             document.getElementById('asp-chart-form').classList.add('hidden');
             setChart(null);
         }

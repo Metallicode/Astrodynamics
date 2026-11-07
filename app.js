@@ -58,7 +58,7 @@ const STORAGE_KEY = 'astrodynamics.settings.v2';
 const state = {
     date: new Date(),
     mode: 'tropical',            // 'tropical' | 'sidereal' | 'astronomical'
-    view: 'wheel',               // 'wheel' | 'atlas' (the Sky Atlas, atlas.js) | 'moon' (moon.js)
+    view: 'wheel',               // 'wheel' | 'atlas' (the Sky Atlas, atlas.js) | 'moon' (moon.js) | 'aspects' | 'pair'
     nodeType: 'mean',            // 'mean' | 'true'
     orbSystem: 'modern',         // 'modern' (orb per aspect) | 'moiety' (traditional orb per planet)
     minorAspects: false,
@@ -1949,6 +1949,7 @@ function updateApp() {
     renderAtlas();
     renderMoon();
     renderAspects();
+    renderPair();
 
     document.getElementById('ayanamsa-display').innerText = isAstro()
         ? `Real IAU constellation borders (unequal sizes, incl. Ophiuchus) · ayanamsa ${fmtOrb(ayanamsa(date))}`
@@ -2171,6 +2172,7 @@ function init() {
     bindZoom();
     bindMoon();
     bindAspects();
+    bindPair();
     bindAtlas();
     syncLocationInputs();
     updateApp();
