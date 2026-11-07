@@ -146,6 +146,10 @@
         body.atlas-open main { padding: 0.75rem; }
         body.atlas-open #view-switch { top: 0.75rem; left: 0.75rem; }
         body.dash-open main { justify-content: flex-start; align-items: stretch; overflow-y: auto; }
+        body.kundli-open main { justify-content: flex-start; overflow-y: auto; }
+        @media (min-width: 1280px) { body.kundli-open main { height: 100vh; } }
+        .kundli-svg { width: 100%; height: auto; display: block; user-select: none; }
+        .kundli-svg text { font-family: inherit; }
         @media (min-width: 1280px) { body.dash-open main { height: 100vh; } }
         .moon-card { background: rgba(15, 23, 42, 0.65); border: 1px solid #1e293b; border-radius: 1rem; padding: 1rem; }
         .moon-h { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
@@ -358,6 +362,11 @@
             <div class="text-[10px] text-slate-500 font-mono mt-1" id="zoom-level">1.0×</div>
             <div class="text-[10px] text-amber-300 text-center max-w-[4rem] leading-tight hidden" id="zoom-follow"></div>
         </div>
+        <div class="flex gap-1 bg-slate-800 p-1 rounded-lg seg-sm mt-10 mb-3 self-center" id="chart-style-switch" title="Chart style">
+            <button class="seg-btn" data-chart-style="wheel" title="The circular chart, in the zodiac mode chosen on the left">☸ Wheel</button>
+            <button class="seg-btn" data-chart-style="north" title="North Indian diamond chart: Rashi (D1) and Navamsa (D9), sidereal">◇ North Indian</button>
+        </div>
+        <div id="wheel-style" class="w-full flex flex-col items-center">
         <div class="wheel-container" id="wheel" style="max-width: min(85vh, 760px);">
             <svg class="wheel-grid" viewBox="-130 -130 260 260" id="svg-layer">
                 <circle cx="0" cy="0" r="117" fill="none" stroke="#334155" stroke-width="0.6" />
@@ -376,6 +385,43 @@
             <div id="planets-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
         </div>
         <p class="text-xs text-slate-600 mt-4 text-center">Hover for a quick look · click any planet, sign, house, star or aspect line for details · scroll or pinch to zoom, drag to pan</p>
+        </div>
+
+        <!-- North Indian chart (jyotish.js) -->
+        <div id="kundli-view" class="hidden w-full max-w-5xl flex flex-col gap-4">
+            <div id="kundli-meta" class="text-xs text-slate-400 text-center leading-relaxed"></div>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="moon-card">
+                    <div class="flex items-baseline justify-between mb-2">
+                        <div class="moon-h text-amber-300">Rashi · D1</div>
+                        <div class="text-[11px] text-slate-500">the birth chart</div>
+                    </div>
+                    <svg id="kundli-d1" class="kundli-svg" viewBox="-104 -104 208 208"></svg>
+                </div>
+                <div class="moon-card">
+                    <div class="flex items-baseline justify-between mb-2">
+                        <div class="moon-h text-amber-300">Navamsa · D9</div>
+                        <div class="text-[11px] text-slate-500">each sign split in nine</div>
+                    </div>
+                    <svg id="kundli-d9" class="kundli-svg" viewBox="-104 -104 208 208"></svg>
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                <div>Numbers are signs (1 Aries … 12 Pisces) · <span class="text-amber-300">La</span> Lagna · <span class="text-emerald-400">↑</span> exalted · <span class="text-rose-400">↓</span> debilitated · <span class="text-amber-300">R</span> retrograde · <span class="text-amber-300">c</span> combust · dashed arrows are special aspects</div>
+                <label class="atlas-toggle"><input type="checkbox" id="kundli-outer">Uranus, Neptune, Pluto</label>
+            </div>
+            <div id="kundli-info" class="moon-card"></div>
+            <div class="moon-card overflow-x-auto">
+                <div class="moon-h text-slate-400 mb-2">Grahas</div>
+                <div id="kundli-table"></div>
+            </div>
+            <div class="moon-card text-xs text-slate-400 leading-relaxed">
+                <div class="moon-h text-slate-400 mb-1">Reading the North Indian chart</div>
+                <p>The <b class="text-slate-300">houses stay put and the signs move</b>: the top diamond is always the 1st house (the Lagna), and the houses run anticlockwise from it. The four diamonds are the kendras (1, 4, 7, 10), the most powerful houses. The small number in each house is the sign in it, so the Lagna's number tells you the rising sign at a glance.</p>
+                <p class="mt-2">The <b class="text-slate-300">Navamsa</b> divides every sign into nine parts of 3°20′. Tradition reads it as the chart's inner strength, and for marriage and the second half of life. A graha in the same sign in both charts is <b class="text-slate-300">vargottama</b> and counts as strong. Graha drishti: every graha aspects the 7th house from itself; Mars also the 4th and 8th, Jupiter the 5th and 9th, Saturn the 3rd and 10th, and Rahu and Ketu (in one common convention) the 5th and 9th.</p>
+                <p class="mt-2 text-slate-500">Combustion limits follow the Parashari values (Mercury 12° and Venus 8° when retrograde). Rahu exalted in Taurus and Ketu in Scorpio is one of several conventions.</p>
+            </div>
+        </div>
         </div>
 
         <!-- Sky Atlas -->
@@ -654,5 +700,6 @@
     <script src="moon.js"></script>
     <script src="aspects.js"></script>
     <script src="pair.js"></script>
+    <script src="jyotish.js"></script>
 </body>
 </html>

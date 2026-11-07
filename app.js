@@ -59,6 +59,7 @@ const state = {
     date: new Date(),
     mode: 'tropical',            // 'tropical' | 'sidereal' | 'astronomical'
     view: 'wheel',               // 'wheel' | 'atlas' (the Sky Atlas, atlas.js) | 'moon' (moon.js) | 'aspects' | 'pair'
+    chartStyle: 'wheel',         // Wheel view style: 'wheel' | 'north' (North Indian chart, jyotish.js)
     nodeType: 'mean',            // 'mean' | 'true'
     orbSystem: 'modern',         // 'modern' (orb per aspect) | 'moiety' (traditional orb per planet)
     minorAspects: false,
@@ -91,14 +92,15 @@ function loadSettings() {
         if (typeof saved.eventMoon === 'boolean') state.eventMoon = saved.eventMoon;
         if (saved.playStep) state.playStep = saved.playStep;
         if (saved.view) state.view = saved.view;
+        if (saved.chartStyle) state.chartStyle = saved.chartStyle;
     } catch (e) {
         console.warn('Could not read saved settings', e);
     }
 }
 
 function saveSettings() {
-    const { mode, nodeType, houseSystem, orbSystem, minorAspects, location, layers, eventDays, eventMoon, playStep, view } = state;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, nodeType, houseSystem, orbSystem, minorAspects, location, layers, eventDays, eventMoon, playStep, view }));
+    const { mode, nodeType, houseSystem, orbSystem, minorAspects, location, layers, eventDays, eventMoon, playStep, view, chartStyle } = state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, nodeType, houseSystem, orbSystem, minorAspects, location, layers, eventDays, eventMoon, playStep, view, chartStyle }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1950,6 +1952,7 @@ function updateApp() {
     renderMoon();
     renderAspects();
     renderPair();
+    renderKundli();
 
     document.getElementById('ayanamsa-display').innerText = isAstro()
         ? `Real IAU constellation borders (unequal sizes, incl. Ophiuchus) · ayanamsa ${fmtOrb(ayanamsa(date))}`
@@ -2173,6 +2176,7 @@ function init() {
     bindMoon();
     bindAspects();
     bindPair();
+    bindKundli();
     bindAtlas();
     syncLocationInputs();
     updateApp();

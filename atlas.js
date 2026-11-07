@@ -592,6 +592,7 @@ function setView(view) {
     document.getElementById('control-pane').classList.toggle('hidden', view !== 'wheel');
     document.body.classList.toggle('atlas-open', view !== 'wheel');
     document.body.classList.toggle('dash-open', ['moon', 'aspects', 'pair'].includes(view));
+    document.body.classList.toggle('kundli-open', view === 'wheel' && state.chartStyle === 'north');
     if (view !== 'moon') stopMoonAnim();
     if (view !== 'aspects') stopAspectAnim();
     if (view !== 'pair') stopPairAnim();
@@ -608,6 +609,7 @@ function setView(view) {
     }
     if (view === 'aspects') renderAspects();
     if (view === 'pair') renderPair();
+    if (view === 'wheel') renderKundli();
     if (current.pos) renderPanel();
 }
 

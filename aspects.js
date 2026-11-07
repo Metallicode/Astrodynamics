@@ -493,7 +493,7 @@ function reading(ps, rel, ex, dissociate, phaseInfo) {
 // ---------------------------------------------------------------------------
 // The pair's cycle
 
-function renderCycle(ps) {
+function renderAspectCycle(ps) {
     const el = document.getElementById('asp-cycle');
     const A = info(ps.a), B = info(ps.b), F = info(ps.fast), S = info(ps.slow);
     const bound = boundLimit(ps.a, ps.b);
@@ -1097,7 +1097,7 @@ function renderAspects() {
     const ps = pairState(aview.a, aview.b, state.date);
     renderLab(ps);
     renderFactors(ps);
-    renderCycle(ps);
+    renderAspectCycle(ps);
     renderGraph(ps);
     renderGrid();
     renderPatterns();
